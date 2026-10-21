@@ -19,9 +19,9 @@ import { mockApi } from "@/services/mock-backend";
  */
 
 export const API_BASE_URL: string =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:3000/api";
+  (import.meta.env["VITE_API_BASE_URL"] as string | undefined) ?? "http://localhost:3000/api";
 
-const USE_MOCK: boolean = import.meta.env.VITE_USE_MOCK_API !== "false";
+const USE_MOCK: boolean = import.meta.env["VITE_USE_MOCK_API"] !== "false";
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -81,11 +81,14 @@ export interface FollowResult {
 // ---------------------------------------------------------------------------
 
 async function request<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const init: RequestInit = {
     method: options.method ?? "GET",
     headers: { "Content-Type": "application/json" },
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-  });
+  };
+  if (options.body !== undefined) {
+    init.body = JSON.stringify(options.body);
+  }
+  const response = await fetch(`${API_BASE_URL}${path}`, init);
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
     try {
