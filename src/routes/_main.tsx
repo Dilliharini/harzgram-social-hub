@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Link, Outlet, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Home, Plus, Search, UserRound } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 import { api, type AppUser } from "@/services/api";
