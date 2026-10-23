@@ -14,6 +14,8 @@ import { Route as MainRouteImport } from './routes/_main'
 import { Route as MainComposeRouteImport } from './routes/_main.compose'
 import { Route as MainDiscoverRouteImport } from './routes/_main.discover'
 import { Route as MainFeedRouteImport } from './routes/_main.feed'
+import { Route as MainMessagesRouteImport } from './routes/_main.messages'
+import { Route as MainNotificationsRouteImport } from './routes/_main.notifications'
 import { Route as MainPostPostIdRouteImport } from './routes/_main.post.$postId'
 import { Route as MainProfileUsernameRouteImport } from './routes/_main.profile.$username'
 
@@ -41,6 +43,16 @@ const MainFeedRoute = MainFeedRouteImport.update({
   path: '/feed',
   getParentRoute: () => MainRoute,
 } as any)
+const MainMessagesRoute = MainMessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
+  getParentRoute: () => MainRoute,
+} as any)
+const MainNotificationsRoute = MainNotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => MainRoute,
+} as any)
 const MainPostPostIdRoute = MainPostPostIdRouteImport.update({
   id: '/post/$postId',
   path: '/post/$postId',
@@ -57,6 +69,8 @@ export interface FileRoutesByFullPath {
   '/compose': typeof MainComposeRoute
   '/discover': typeof MainDiscoverRoute
   '/feed': typeof MainFeedRoute
+  '/messages': typeof MainMessagesRoute
+  '/notifications': typeof MainNotificationsRoute
   '/post/$postId': typeof MainPostPostIdRoute
   '/profile/$username': typeof MainProfileUsernameRoute
 }
@@ -65,6 +79,8 @@ export interface FileRoutesByTo {
   '/compose': typeof MainComposeRoute
   '/discover': typeof MainDiscoverRoute
   '/feed': typeof MainFeedRoute
+  '/messages': typeof MainMessagesRoute
+  '/notifications': typeof MainNotificationsRoute
   '/post/$postId': typeof MainPostPostIdRoute
   '/profile/$username': typeof MainProfileUsernameRoute
 }
@@ -75,6 +91,8 @@ export interface FileRoutesById {
   '/_main/compose': typeof MainComposeRoute
   '/_main/discover': typeof MainDiscoverRoute
   '/_main/feed': typeof MainFeedRoute
+  '/_main/messages': typeof MainMessagesRoute
+  '/_main/notifications': typeof MainNotificationsRoute
   '/_main/post/$postId': typeof MainPostPostIdRoute
   '/_main/profile/$username': typeof MainProfileUsernameRoute
 }
@@ -85,6 +103,8 @@ export interface FileRouteTypes {
     | '/compose'
     | '/discover'
     | '/feed'
+    | '/messages'
+    | '/notifications'
     | '/post/$postId'
     | '/profile/$username'
   fileRoutesByTo: FileRoutesByTo
@@ -93,6 +113,8 @@ export interface FileRouteTypes {
     | '/compose'
     | '/discover'
     | '/feed'
+    | '/messages'
+    | '/notifications'
     | '/post/$postId'
     | '/profile/$username'
   id:
@@ -102,6 +124,8 @@ export interface FileRouteTypes {
     | '/_main/compose'
     | '/_main/discover'
     | '/_main/feed'
+    | '/_main/messages'
+    | '/_main/notifications'
     | '/_main/post/$postId'
     | '/_main/profile/$username'
   fileRoutesById: FileRoutesById
@@ -148,6 +172,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MainFeedRouteImport
       parentRoute: typeof MainRoute
     }
+    '/_main/messages': {
+      id: '/_main/messages'
+      path: '/messages'
+      fullPath: '/messages'
+      preLoaderRoute: typeof MainMessagesRouteImport
+      parentRoute: typeof MainRoute
+    }
+    '/_main/notifications': {
+      id: '/_main/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof MainNotificationsRouteImport
+      parentRoute: typeof MainRoute
+    }
     '/_main/post/$postId': {
       id: '/_main/post/$postId'
       path: '/post/$postId'
@@ -169,6 +207,8 @@ interface MainRouteChildren {
   MainComposeRoute: typeof MainComposeRoute
   MainDiscoverRoute: typeof MainDiscoverRoute
   MainFeedRoute: typeof MainFeedRoute
+  MainMessagesRoute: typeof MainMessagesRoute
+  MainNotificationsRoute: typeof MainNotificationsRoute
   MainPostPostIdRoute: typeof MainPostPostIdRoute
   MainProfileUsernameRoute: typeof MainProfileUsernameRoute
 }
@@ -177,6 +217,8 @@ const MainRouteChildren: MainRouteChildren = {
   MainComposeRoute: MainComposeRoute,
   MainDiscoverRoute: MainDiscoverRoute,
   MainFeedRoute: MainFeedRoute,
+  MainMessagesRoute: MainMessagesRoute,
+  MainNotificationsRoute: MainNotificationsRoute,
   MainPostPostIdRoute: MainPostPostIdRoute,
   MainProfileUsernameRoute: MainProfileUsernameRoute,
 }

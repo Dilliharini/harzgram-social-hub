@@ -9,17 +9,18 @@ import { mockApi } from "@/services/mock-backend";
  * below delegates to `mockApi`. To connect your real REST backend later:
  *
  *   1. Start your backend (e.g. Express/FastAPI in VS Code).
- *   2. Point the app at it:  VITE_API_BASE_URL=http://localhost:3000/api
+ *   2. Point the app at it:  VITE_API_BASE_URL=http://localhost:3000
  *      in a `.env` file at the project root (or edit the fallback below).
  *   3. Set  VITE_USE_MOCK_API=false  — every method then performs real
- *      HTTP requests using the REST paths listed next to each call.
+ *      HTTP requests using the REST paths listed next to each call and the
+ *      server-side session cookie.
  *
  * The UI components never call fetch directly; they only import `api` from
  * this file, so swapping the transport is a one-line change.
  */
 
 export const API_BASE_URL: string =
-  (import.meta.env["VITE_API_BASE_URL"] as string | undefined) ?? "http://localhost:3000/api";
+  (import.meta.env["VITE_API_BASE_URL"] as string | undefined) ?? "http://localhost:3000";
 
 const USE_MOCK: boolean = import.meta.env["VITE_USE_MOCK_API"] !== "false";
 
@@ -76,17 +77,50 @@ export interface FollowResult {
   followerCount: number;
 }
 
+export interface DeletePostResult {
+  ok: boolean;
+  imageCleanupPending?: boolean;
+}
+
+export interface Story {
+  id: string;
+  author: AppUser;
+  imageUrl: string;
+  caption: string | null;
+  createdAt: number;
+  expiresAt: number;
+}
+
+export type NotificationType = "like" | "comment" | "follow";
+
+export interface AppNotification {
+  id: string;
+  actor: AppUser;
+  type: NotificationType;
+  postId: string | null;
+  isRead: boolean;
+  createdAt: number;
+}
+
 // ---------------------------------------------------------------------------
 // REST transport (used when USE_MOCK is false)
 // ---------------------------------------------------------------------------
 
-async function request<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
+async function request<T>(
+  path: string,
+  options: { method?: string; body?: unknown } = {},
+): Promise<T> {
   const init: RequestInit = {
     method: options.method ?? "GET",
-    headers: { "Content-Type": "application/json" },
+    credentials: "include",
   };
   if (options.body !== undefined) {
-    init.body = JSON.stringify(options.body);
+    if (options.body instanceof FormData) {
+      init.body = options.body;
+    } else {
+      init.headers = { "Content-Type": "application/json" };
+      init.body = JSON.stringify(options.body);
+    }
   }
   const response = await fetch(`${API_BASE_URL}${path}`, init);
   if (!response.ok) {
@@ -108,6 +142,12 @@ function call<T>(
   options?: { method?: string; body?: unknown },
 ): Promise<T> {
   return USE_MOCK ? mock() : request<T>(path, options);
+}
+
+function notifyNotificationChange(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("harzgram:notifications-changed"));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -140,34 +180,109 @@ export const api = {
     call("/auth/logout", () => mockApi.signOut(), { method: "POST" }),
 
   /** GET /auth/me */
-  getSessionUser: (): Promise<AppUser | null> =>
-    call("/auth/me", () => mockApi.getSessionUser()),
+  getSessionUser: (): Promise<AppUser | null> => call("/auth/me", () => mockApi.getSessionUser()),
 
   /** GET /feed */
   getFeed: (): Promise<FeedPost[]> => call("/feed", () => mockApi.getFeed()),
+
+  /** GET /notifications */
+  getNotifications: (): Promise<AppNotification[]> =>
+    call("/notifications", () => mockApi.getNotifications()),
+
+  /** GET /notifications/unread-count */
+  getUnreadNotificationCount: (): Promise<{ count: number }> =>
+    call("/notifications/unread-count", () => mockApi.getUnreadNotificationCount()),
+
+  /** PATCH /notifications/:id/read */
+  markNotificationRead: async (notificationId: string): Promise<{ ok: boolean }> => {
+    const result = await call(
+      `/notifications/${encodeURIComponent(notificationId)}/read`,
+      () => mockApi.markNotificationRead(notificationId),
+      { method: "PATCH" },
+    );
+    notifyNotificationChange();
+    return result;
+  },
+
+  /** PATCH /notifications/read-all */
+  markAllNotificationsRead: async (): Promise<{ ok: boolean }> => {
+    const result = await call("/notifications/read-all", () => mockApi.markAllNotificationsRead(), {
+      method: "PATCH",
+    });
+    notifyNotificationChange();
+    return result;
+  },
+
+  /** GET /stories */
+  getActiveStories: (): Promise<Story[]> => call("/stories", () => mockApi.getActiveStories()),
+
+  /** POST /stories  multipart fields: image, caption? */
+  createStory: (image: File, caption: string): Promise<Story> => {
+    if (USE_MOCK) {
+      return Promise.reject(
+        new Error(
+          "Story uploads require the Express backend. Switch off mock mode to share a story.",
+        ),
+      );
+    }
+    const body = new FormData();
+    body.set("image", image);
+    if (caption.trim()) body.set("caption", caption.trim());
+    return request("/stories", { method: "POST", body });
+  },
 
   /** GET /posts/:id */
   getPost: (postId: string): Promise<FeedPost> =>
     call(`/posts/${postId}`, () => mockApi.getPost(postId)),
 
   /** POST /posts  body: { text } */
-  createPost: (text: string): Promise<FeedPost> =>
-    call("/posts", () => mockApi.createPost(text), { method: "POST", body: { text } }),
+  createPost: (text: string, image?: File): Promise<FeedPost> => {
+    if (image) {
+      if (USE_MOCK) {
+        return Promise.reject(
+          new Error(
+            "Image uploads require the Express backend. Switch off mock mode to post an image.",
+          ),
+        );
+      }
+      const body = new FormData();
+      if (text.trim()) body.set("text", text.trim());
+      body.set("image", image);
+      return request("/posts", { method: "POST", body });
+    }
+    return call("/posts", () => mockApi.createPost(text), { method: "POST", body: { text } });
+  },
+
+  /** DELETE /posts/:id */
+  deletePost: (postId: string): Promise<DeletePostResult> =>
+    call(`/posts/${postId}`, () => mockApi.deletePost(postId), { method: "DELETE" }),
 
   /** POST /posts/:id/like (toggles) */
-  toggleLike: (postId: string): Promise<LikeResult> =>
-    call(`/posts/${postId}/like`, () => mockApi.toggleLike(postId), { method: "POST" }),
+  toggleLike: async (postId: string): Promise<LikeResult> => {
+    const result = await call(`/posts/${postId}/like`, () => mockApi.toggleLike(postId), {
+      method: "POST",
+    });
+    notifyNotificationChange();
+    return result;
+  },
 
   /** GET /posts/:id/comments */
   getComments: (postId: string): Promise<PostComment[]> =>
     call(`/posts/${postId}/comments`, () => mockApi.getComments(postId)),
 
   /** POST /posts/:id/comments  body: { text } */
-  addComment: (postId: string, text: string): Promise<PostComment> =>
-    call(`/posts/${postId}/comments`, () => mockApi.addComment(postId, text), {
-      method: "POST",
-      body: { text },
-    }),
+  addComment: async (postId: string, text: string): Promise<PostComment> => {
+    const comment = await call(
+      `/posts/${postId}/comments`,
+      () => mockApi.addComment(postId, text),
+      {
+        method: "POST",
+        body: { text },
+      },
+    );
+    notifyNotificationChange();
+    return comment;
+  },
 
   /** GET /users/:username */
   getUserProfile: (username: string): Promise<UserProfile> =>
@@ -186,8 +301,13 @@ export const api = {
     call("/users/suggested", () => mockApi.getSuggestedUsers()),
 
   /** POST /users/:username/follow (toggles follow/unfollow) */
-  toggleFollow: (username: string): Promise<FollowResult> =>
-    call(`/users/${encodeURIComponent(username)}/follow`, () => mockApi.toggleFollow(username), {
-      method: "POST",
-    }),
+  toggleFollow: async (username: string): Promise<FollowResult> => {
+    const result = await call(
+      `/users/${encodeURIComponent(username)}/follow`,
+      () => mockApi.toggleFollow(username),
+      { method: "POST" },
+    );
+    notifyNotificationChange();
+    return result;
+  },
 };

@@ -1,10 +1,9 @@
 /**
  * Session helpers.
  *
- * For now the "who is signed in" state lives in localStorage because the app
- * runs entirely on mock data. When you connect the real REST backend, replace
- * this with token storage (e.g. a JWT from POST /auth/login) kept here or in
- * an httpOnly cookie handled by the backend.
+ * In mock mode the "who is signed in" state lives in localStorage. The real
+ * REST backend manages authentication in its own HTTP-only server-side
+ * session cookie, so no API token is stored here.
  */
 
 const SESSION_KEY = "harzgram_session_username";

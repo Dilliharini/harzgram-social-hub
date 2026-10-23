@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, Send } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 import { PostCard } from "@/components/post-card";
-import { api, type FeedPost, type PostComment } from "@/services/api";
+import { api, type AppUser, type FeedPost, type PostComment } from "@/services/api";
 import { timeAgo } from "@/lib/time";
 
 export const Route = createFileRoute("/_main/post/$postId")({
@@ -22,13 +22,19 @@ export const Route = createFileRoute("/_main/post/$postId")({
 
 function PostDetailPage() {
   const { postId } = Route.useParams();
+  const navigate = useNavigate();
   const [post, setPost] = useState<FeedPost | null>(null);
+  const [me, setMe] = useState<AppUser | null>(null);
   const [comments, setComments] = useState<PostComment[] | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    api
+      .getSessionUser()
+      .then(setMe)
+      .catch(() => undefined);
     api
       .getPost(postId)
       .then(setPost)
@@ -70,7 +76,15 @@ function PostDetailPage() {
         </div>
       ) : null}
 
-      {post ? <PostCard post={post} /> : !error ? <div className="card-panel h-48 animate-pulse" /> : null}
+      {post ? (
+        <PostCard
+          post={post}
+          canDelete={me?.id === post.author.id}
+          onDeleted={() => void navigate({ to: "/feed" })}
+        />
+      ) : !error ? (
+        <div className="card-panel h-48 animate-pulse" />
+      ) : null}
 
       <section className="card-panel p-4">
         <h2 className="mb-3 px-1 text-sm font-bold text-muted-foreground">
@@ -86,7 +100,12 @@ function PostDetailPage() {
             maxLength={280}
             aria-label="Add a comment"
           />
-          <button type="submit" disabled={busy || !draft.trim()} className="btn-primary !px-4" aria-label="Send comment">
+          <button
+            type="submit"
+            disabled={busy || !draft.trim()}
+            className="btn-primary !px-4"
+            aria-label="Send comment"
+          >
             <Send size={16} />
           </button>
         </form>
@@ -118,7 +137,9 @@ function PostDetailPage() {
                     {timeAgo(comment.createdAt)}
                   </span>
                 </div>
-                <p className="mt-0.5 text-sm leading-relaxed break-words text-foreground">{comment.text}</p>
+                <p className="mt-0.5 text-sm leading-relaxed break-words text-foreground">
+                  {comment.text}
+                </p>
               </div>
             </div>
           ))}

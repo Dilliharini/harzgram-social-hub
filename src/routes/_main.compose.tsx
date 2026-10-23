@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { ImagePlus, X } from "lucide-react";
 import { api } from "@/services/api";
 
 export const Route = createFileRoute("/_main/compose")({
@@ -17,30 +18,69 @@ export const Route = createFileRoute("/_main/compose")({
 });
 
 const MAX_LENGTH = 280;
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 const EMOJI_PICKS = ["🌤", "🐶", "☕", "🏃", "🎨", "🍜", "✨", "📸"];
+const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 function ComposePage() {
   const navigate = useNavigate();
   const [text, setText] = useState("");
+  const [image, setImage] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const imageInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!image) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(image);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [image]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (busy || !text.trim()) return;
+    if (busy || (!text.trim() && !image)) return;
     setBusy(true);
     setError(null);
     try {
-      await api.createPost(text);
+      await api.createPost(text, image ?? undefined);
       await navigate({ to: "/feed" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't publish your post.");
+    } finally {
       setBusy(false);
     }
   }
 
+  function selectImage(file: File | undefined) {
+    if (!file) return;
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+      setError("Choose a JPEG, PNG, or WebP image.");
+      if (imageInput.current) imageInput.current.value = "";
+      return;
+    }
+    if (file.size > MAX_IMAGE_SIZE) {
+      setError("Images must be 10 MB or smaller.");
+      if (imageInput.current) imageInput.current.value = "";
+      return;
+    }
+    setError(null);
+    setImage(file);
+  }
+
+  function removeImage() {
+    setImage(null);
+    if (imageInput.current) imageInput.current.value = "";
+  }
+
   function appendEmoji(emoji: string) {
-    setText((prev) => `${prev}${prev && !prev.endsWith(" ") ? " " : ""}${emoji}`.slice(0, MAX_LENGTH));
+    setText((prev) =>
+      `${prev}${prev && !prev.endsWith(" ") ? " " : ""}${emoji}`.slice(0, MAX_LENGTH),
+    );
   }
 
   return (
@@ -63,6 +103,48 @@ function ComposePage() {
           maxLength={MAX_LENGTH}
           autoFocus
         />
+
+        <div className="mt-4">
+          <input
+            ref={imageInput}
+            type="file"
+            accept={ACCEPTED_IMAGE_TYPES.join(",")}
+            className="sr-only"
+            aria-label="Choose a post image"
+            onChange={(event) => selectImage(event.currentTarget.files?.[0])}
+          />
+          <button
+            type="button"
+            onClick={() => imageInput.current?.click()}
+            className="btn-secondary"
+            disabled={busy}
+          >
+            <ImagePlus size={18} />
+            {image ? "Choose a different image" : "Add an image"}
+          </button>
+        </div>
+
+        {previewUrl ? (
+          <div className="relative mt-4 overflow-hidden rounded-2xl border border-border bg-muted">
+            <img
+              src={previewUrl}
+              alt="Selected post preview"
+              className="max-h-[28rem] w-full object-contain"
+            />
+            <button
+              type="button"
+              onClick={removeImage}
+              disabled={busy}
+              aria-label="Remove selected image"
+              className="absolute top-3 right-3 flex h-9 w-9 items-center justify-center rounded-full bg-foreground/80 text-background transition hover:bg-foreground"
+            >
+              <X size={18} />
+            </button>
+            <p className="truncate bg-card px-3 py-2 text-xs text-muted-foreground">
+              {image?.name}
+            </p>
+          </div>
+        ) : null}
 
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
           {EMOJI_PICKS.map((emoji) => (
@@ -87,7 +169,11 @@ function ComposePage() {
 
         {error ? <p className="mt-3 text-sm font-medium text-destructive">{error}</p> : null}
 
-        <button type="submit" disabled={busy || !text.trim()} className="btn-primary mt-4 w-full">
+        <button
+          type="submit"
+          disabled={busy || (!text.trim() && !image)}
+          className="btn-primary mt-4 w-full"
+        >
           {busy ? "Publishing…" : "Publish post"}
         </button>
       </form>

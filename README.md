@@ -40,3 +40,5 @@ cd <repository-name>
 npm i
 npm run dev
 ```
+
+For the optional Express.js and PostgreSQL backend, see [backend setup](./backend/README.md).

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
-import { Search, Sparkles } from "lucide-react";
+import { Link, createFileRoute } from "@tanstack/react-router";
+import { Plus, Search, Sparkles } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 import { FollowButton } from "@/components/follow-button";
 import { UserRow } from "@/components/user-row";
@@ -10,7 +10,10 @@ export const Route = createFileRoute("/_main/discover")({
   head: () => ({
     meta: [
       { title: "Discover · HarzGram" },
-      { name: "description", content: "Search for people and find new accounts to follow on HarzGram." },
+      {
+        name: "description",
+        content: "Search for people and find new accounts to follow on HarzGram.",
+      },
       { property: "og:title", content: "Discover · HarzGram" },
       {
         property: "og:description",
@@ -37,7 +40,9 @@ function DiscoverPage() {
         api
           .getSuggestedUsers()
           .then(setSuggestions)
-          .catch((err) => setError(err instanceof Error ? err.message : "Couldn't load suggestions."));
+          .catch((err) =>
+            setError(err instanceof Error ? err.message : "Couldn't load suggestions."),
+          );
         return;
       }
       api
@@ -50,7 +55,13 @@ function DiscoverPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="font-display text-2xl font-extrabold tracking-tight">Discover</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="font-display text-2xl font-extrabold tracking-tight">Discover</h1>
+        <Link to="/compose" className="btn-primary shrink-0">
+          <Plus size={18} strokeWidth={2.5} />
+          Create post
+        </Link>
+      </div>
 
       <div className="relative">
         <Search
@@ -73,7 +84,9 @@ function DiscoverPage() {
       {results !== null ? (
         <section>
           <h2 className="mb-1 px-1 text-sm font-bold text-muted-foreground">
-            {results.length > 0 ? `${results.length} ${results.length === 1 ? "person" : "people"} found` : "No results"}
+            {results.length > 0
+              ? `${results.length} ${results.length === 1 ? "person" : "people"} found`
+              : "No results"}
           </h2>
           {results.length === 0 ? (
             <div className="card-panel p-8 text-center text-sm text-muted-foreground">
@@ -95,7 +108,10 @@ function DiscoverPage() {
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
             {suggestions.map((user) => (
-              <div key={user.username} className="card-panel flex flex-col items-center p-5 text-center">
+              <div
+                key={user.username}
+                className="card-panel flex flex-col items-center p-5 text-center"
+              >
                 <Avatar user={user} size="lg" />
                 <p className="mt-3 text-sm font-bold text-foreground">{user.name}</p>
                 <p className="text-xs text-muted-foreground">@{user.username}</p>
@@ -103,7 +119,11 @@ function DiscoverPage() {
                   {user.bio}
                 </p>
                 <div className="mt-3">
-                  <FollowButton username={user.username} initialIsFollowing={user.isFollowing} size="sm" />
+                  <FollowButton
+                    username={user.username}
+                    initialIsFollowing={user.isFollowing}
+                    size="sm"
+                  />
                 </div>
               </div>
             ))}

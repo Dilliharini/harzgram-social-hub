@@ -14,4 +14,15 @@ describe("App routing", () => {
 
     expect(matches.at(-1)?.routeId).not.toBe(rootRouteId);
   });
+
+  it.each([
+    { path: "/messages", routeId: "/_main/messages" },
+    { path: "/notifications", routeId: "/_main/notifications" },
+  ])("matches the route at $path", ({ path, routeId }) => {
+    const router = createRouter({ routeTree, context: { queryClient: new QueryClient() } });
+
+    const matches = router.matchRoutes(path);
+
+    expect(matches.at(-1)?.routeId).toBe(routeId);
+  });
 });

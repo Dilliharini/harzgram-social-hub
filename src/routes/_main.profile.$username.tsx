@@ -13,7 +13,10 @@ export const Route = createFileRoute("/_main/profile/$username")({
       { title: "Profile · HarzGram" },
       { name: "description", content: "A HarzGram profile — bio, posts and follower counts." },
       { property: "og:title", content: "Profile · HarzGram" },
-      { property: "og:description", content: "A HarzGram profile — bio, posts and follower counts." },
+      {
+        property: "og:description",
+        content: "A HarzGram profile — bio, posts and follower counts.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -91,7 +94,11 @@ function ProfilePage() {
 
             <div className="mt-4 flex justify-center sm:justify-start">
               {profile.isSelf ? (
-                <button type="button" onClick={handleSignOut} className="btn-secondary !py-2 text-xs">
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="btn-secondary !py-2 text-xs"
+                >
                   <LogOut size={14} />
                   Sign out
                 </button>
@@ -119,7 +126,19 @@ function ProfilePage() {
         </div>
       ) : null}
 
-      {posts?.map((post) => <PostCard key={post.id} post={post} />)}
+      {posts?.map((post) => (
+        <PostCard
+          key={post.id}
+          post={post}
+          canDelete={profile.isSelf}
+          onDeleted={(postId) => {
+            setPosts((current) => current?.filter((item) => item.id !== postId) ?? null);
+            setProfile((current) =>
+              current ? { ...current, postCount: Math.max(0, current.postCount - 1) } : current,
+            );
+          }}
+        />
+      ))}
     </div>
   );
 }

@@ -2,12 +2,14 @@ import { seedComments, seedFollows, seedPosts, seedUsers } from "@/data/sample-d
 import { clearSessionUsername, getSessionUsername, setSessionUsername } from "@/lib/session";
 import type {
   AppUser,
+  AppNotification,
   FeedPost,
   FollowResult,
   LikeResult,
   PostComment,
   SignUpInput,
   SignInInput,
+  Story,
   UserSummary,
   UserProfile,
 } from "./api";
@@ -43,6 +45,16 @@ interface StoredComment {
   createdAt: number;
 }
 
+interface StoredNotification {
+  id: string;
+  recipientUsername: string;
+  actorUsername: string;
+  type: "like" | "comment" | "follow";
+  postId: string | null;
+  isRead: boolean;
+  createdAt: number;
+}
+
 interface MockDb {
   users: MockUser[];
   posts: StoredPost[];
@@ -51,6 +63,7 @@ interface MockDb {
   likes: string[];
   /** `${followerUsername}:${targetUsername}` */
   follows: string[];
+  notifications: StoredNotification[];
 }
 
 const DB_KEY = "harzgram_mock_db_v1";
@@ -89,6 +102,7 @@ function seedDb(): MockDb {
     })),
     likes: [],
     follows: seedFollows.map(([follower, target]) => `${follower}:${target}`),
+    notifications: [],
   };
 }
 
@@ -99,6 +113,7 @@ function loadDb(): MockDb {
     if (raw) {
       try {
         db = JSON.parse(raw) as MockDb;
+        db.notifications ??= [];
         return db;
       } catch {
         // corrupted storage; reseed below
@@ -187,6 +202,36 @@ function toUserSummary(user: MockUser): UserSummary {
   };
 }
 
+function toNotification(notification: StoredNotification): AppNotification {
+  const actor = findUser(notification.actorUsername);
+  return {
+    id: notification.id,
+    actor: actor ? toAppUser(actor) : fallbackAuthor(notification.actorUsername),
+    type: notification.type,
+    postId: notification.postId,
+    isRead: notification.isRead,
+    createdAt: notification.createdAt,
+  };
+}
+
+function addNotification(
+  recipientUsername: string,
+  actorUsername: string,
+  type: StoredNotification["type"],
+  postId: string | null,
+): void {
+  if (recipientUsername.toLowerCase() === actorUsername.toLowerCase()) return;
+  loadDb().notifications.push({
+    id: `n-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    recipientUsername,
+    actorUsername,
+    type,
+    postId,
+    isRead: false,
+    createdAt: Date.now(),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Mock endpoints
 // ---------------------------------------------------------------------------
@@ -220,7 +265,9 @@ export const mockApi = {
     await delay();
     const user = findUser(input.username.trim());
     if (!user) {
-      throw new Error(`We couldn't find anyone with the username "${input.username.trim()}". Try maya.chen!`);
+      throw new Error(
+        `We couldn't find anyone with the username "${input.username.trim()}". Try maya.chen!`,
+      );
     }
     // The mock accepts any password — the real backend enforces credentials.
     setSessionUsername(user.username);
@@ -251,12 +298,75 @@ export const mockApi = {
       .map(toFeedPost);
   },
 
+  async getActiveStories(): Promise<Story[]> {
+    await delay();
+    requireMe();
+    return [];
+  },
+
+  async getNotifications(): Promise<AppNotification[]> {
+    await delay();
+    const me = requireMe();
+    return loadDb()
+      .notifications.filter((notification) => notification.recipientUsername === me.username)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map(toNotification);
+  },
+
+  async getUnreadNotificationCount(): Promise<{ count: number }> {
+    await delay();
+    const me = requireMe();
+    return {
+      count: loadDb().notifications.filter(
+        (notification) => notification.recipientUsername === me.username && !notification.isRead,
+      ).length,
+    };
+  },
+
+  async markNotificationRead(notificationId: string): Promise<{ ok: boolean }> {
+    await delay();
+    const me = requireMe();
+    const notification = loadDb().notifications.find(
+      (item) => item.id === notificationId && item.recipientUsername === me.username,
+    );
+    if (!notification) throw new Error("That notification doesn't exist.");
+    notification.isRead = true;
+    persist();
+    return { ok: true };
+  },
+
+  async markAllNotificationsRead(): Promise<{ ok: boolean }> {
+    await delay();
+    const me = requireMe();
+    for (const notification of loadDb().notifications) {
+      if (notification.recipientUsername === me.username) notification.isRead = true;
+    }
+    persist();
+    return { ok: true };
+  },
+
   async getPost(postId: string): Promise<FeedPost> {
     await delay();
     requireMe();
     const post = loadDb().posts.find((p) => p.id === postId);
     if (!post) throw new Error("That post no longer exists.");
     return toFeedPost(post);
+  },
+
+  async deletePost(postId: string): Promise<{ ok: boolean }> {
+    await delay();
+    const me = requireMe();
+    const database = loadDb();
+    const postIndex = database.posts.findIndex((post) => post.id === postId);
+    if (postIndex < 0) throw new Error("That post doesn't exist or you can't delete it.");
+    if (database.posts[postIndex]!.authorUsername.toLowerCase() !== me.username.toLowerCase()) {
+      throw new Error("You can only delete your own posts.");
+    }
+    database.posts.splice(postIndex, 1);
+    database.comments = database.comments.filter((comment) => comment.postId !== postId);
+    database.likes = database.likes.filter((like) => !like.endsWith(`:${postId}`));
+    persist();
+    return { ok: true };
   },
 
   async createPost(text: string): Promise<FeedPost> {
@@ -292,6 +402,7 @@ export const mockApi = {
     } else {
       likes.push(key);
       post.likeCount += 1;
+      addNotification(post.authorUsername, me.username, "like", postId);
     }
     persist();
     return { likedByMe: index < 0, likeCount: post.likeCount };
@@ -330,6 +441,7 @@ export const mockApi = {
       createdAt: Date.now(),
     };
     loadDb().comments.push(comment);
+    addNotification(post.authorUsername, me.username, "comment", postId);
     persist();
     return {
       id: comment.id,
@@ -412,8 +524,12 @@ export const mockApi = {
       follows.splice(index, 1);
     } else {
       follows.push(key);
+      addNotification(target.username, me.username, "follow", null);
     }
     persist();
-    return { isFollowing: index < 0, followerCount: target.baseFollowerCount + liveFollowerCount(target) };
+    return {
+      isFollowing: index < 0,
+      followerCount: target.baseFollowerCount + liveFollowerCount(target),
+    };
   },
 };
