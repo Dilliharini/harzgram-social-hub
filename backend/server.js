@@ -14,10 +14,11 @@ import pg from "pg";
 const BACKEND_DIRECTORY = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: resolve(BACKEND_DIRECTORY, ".env") });
 
+const isProduction = process.env.NODE_ENV === "production";
 const {
   DATABASE_URL,
   SESSION_SECRET,
-  FRONTEND_ORIGIN = "http://localhost:5173",
+  FRONTEND_ORIGIN = isProduction ? "" : "http://localhost:5173",
   PORT = "3000",
   SESSION_COOKIE_SECURE = "false",
   PUBLIC_API_URL = `http://localhost:${PORT}`,
@@ -54,7 +55,7 @@ function isLocalFrontendOrigin(origin) {
 }
 
 function isAllowedFrontendOrigin(origin) {
-  return allowedOrigins.has(origin) || isLocalFrontendOrigin(origin);
+  return allowedOrigins.has(origin) || (!isProduction && isLocalFrontendOrigin(origin));
 }
 
 const pool = new pg.Pool({ connectionString: DATABASE_URL });
@@ -1046,8 +1047,8 @@ app.use((error, _req, res, _next) => {
   });
 });
 
-const server = app.listen(Number(PORT), () => {
-  console.log(`HarzGram API listening on http://localhost:${PORT}`);
+const server = app.listen(Number(PORT), "0.0.0.0", () => {
+  console.log(`HarzGram API listening on 0.0.0.0:${PORT}`);
   void cleanupExpiredStories().catch((error) => {
     console.error("Could not clean up expired story images.", error);
   });
