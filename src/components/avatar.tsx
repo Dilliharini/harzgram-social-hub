@@ -29,15 +29,26 @@ export function Avatar({
   user,
   size = "md",
 }: {
-  user: Pick<AppUser, "username" | "name">;
+  user: Pick<AppUser, "username" | "name" | "avatarUrl">;
   size?: keyof typeof AVATAR_SIZES;
 }) {
   return (
     <div
-      className={`avatar-hue-${hueIndex(user.username)} flex shrink-0 select-none items-center justify-center rounded-full font-bold ${AVATAR_SIZES[size]}`}
+      className={`avatar-hue-${hueIndex(user.username)} relative flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full font-bold ${AVATAR_SIZES[size]}`}
       aria-hidden="true"
     >
-      {initials(user.name || user.username)}
+      <span>{initials(user.name || user.username)}</span>
+      {user.avatarUrl ? (
+        <img
+          key={user.avatarUrl}
+          src={user.avatarUrl}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+          onError={(event) => {
+            event.currentTarget.style.display = "none";
+          }}
+        />
+      ) : null}
     </div>
   );
 }

@@ -33,6 +33,7 @@ export interface AppUser {
   username: string;
   name: string;
   bio: string;
+  avatarUrl: string | null;
   joinedAt: number;
 }
 
@@ -166,6 +167,14 @@ export interface SignInInput {
   password: string;
 }
 
+export interface ProfileUpdateInput {
+  username: string;
+  name: string;
+  bio: string;
+  image: File | null;
+  removeAvatar: boolean;
+}
+
 export const api = {
   /** POST /auth/signup */
   signUp: (input: SignUpInput): Promise<AppUser> =>
@@ -287,6 +296,19 @@ export const api = {
   /** GET /users/:username */
   getUserProfile: (username: string): Promise<UserProfile> =>
     call(`/users/${encodeURIComponent(username)}`, () => mockApi.getUserProfile(username)),
+
+  /** PATCH /users/me */
+  updateProfile: (input: ProfileUpdateInput): Promise<AppUser> => {
+    const body = new FormData();
+    body.set("username", input.username);
+    body.set("name", input.name);
+    body.set("bio", input.bio);
+    if (input.image) body.set("image", input.image);
+    if (input.removeAvatar) body.set("removeAvatar", "true");
+    return USE_MOCK
+      ? mockApi.updateProfile(input)
+      : request("/users/me", { method: "PATCH", body });
+  },
 
   /** GET /users/:username/posts */
   getUserPosts: (username: string): Promise<FeedPost[]> =>

@@ -192,6 +192,7 @@ function toAppUser(row) {
     username: row.username,
     name: row.name,
     bio: row.bio,
+    avatarUrl: row.avatar_url,
     joinedAt: new Date(row.joined_at).getTime(),
   };
 }
@@ -204,6 +205,7 @@ function toFeedPost(row) {
       username: row.author_username,
       name: row.author_name,
       bio: row.author_bio,
+      avatarUrl: row.author_avatar_url,
       joinedAt: new Date(row.author_joined_at).getTime(),
     },
     text: row.text,
@@ -249,11 +251,11 @@ function destroySession(req) {
   });
 }
 
-const userColumns = "id, username, name, bio, joined_at";
+const userColumns = "id, username, name, bio, avatar_url, joined_at";
 const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const imageUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 2, fieldSize: 1024 },
+  limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 4, fieldSize: 1024 },
   fileFilter(_req, file, callback) {
     if (!allowedImageTypes.has(file.mimetype)) {
       callback(httpError(400, "Choose a JPEG, PNG, or WebP image."));
@@ -335,7 +337,8 @@ const feedSelect = `
   SELECT
     p.id, p.text, p.image_url, p.created_at,
     u.id AS author_id, u.username AS author_username, u.name AS author_name,
-    u.bio AS author_bio, u.joined_at AS author_joined_at,
+    u.bio AS author_bio, u.avatar_url AS author_avatar_url,
+    u.joined_at AS author_joined_at,
     (SELECT COUNT(*)::int FROM likes l WHERE l.post_id = p.id) AS like_count,
     EXISTS (SELECT 1 FROM likes l WHERE l.post_id = p.id AND l.user_id = $1) AS liked_by_me,
     (SELECT COUNT(*)::int FROM comments c WHERE c.post_id = p.id) AS comment_count
@@ -467,7 +470,8 @@ app.get(
     const result = await pool.query(
       `SELECT n.id, n.type, n.post_id, n.is_read, n.created_at,
               u.id AS actor_id, u.username AS actor_username, u.name AS actor_name,
-              u.bio AS actor_bio, u.joined_at AS actor_joined_at
+              u.bio AS actor_bio, u.avatar_url AS actor_avatar_url,
+              u.joined_at AS actor_joined_at
        FROM notifications n
        JOIN users u ON u.id = n.actor_id
        WHERE n.recipient_id = $1
@@ -487,6 +491,7 @@ app.get(
           username: row.actor_username,
           name: row.actor_name,
           bio: row.actor_bio,
+          avatarUrl: row.actor_avatar_url,
           joinedAt: new Date(row.actor_joined_at).getTime(),
         },
       })),
@@ -539,7 +544,8 @@ app.get(
     const result = await pool.query(
       `SELECT s.id, s.image_url, s.caption, s.created_at, s.expires_at,
               u.id AS author_id, u.username AS author_username, u.name AS author_name,
-              u.bio AS author_bio, u.joined_at AS author_joined_at
+              u.bio AS author_bio, u.avatar_url AS author_avatar_url,
+              u.joined_at AS author_joined_at
        FROM stories s
        JOIN users u ON u.id = s.author_id
        WHERE s.expires_at > NOW()
@@ -554,6 +560,7 @@ app.get(
           username: row.author_username,
           name: row.author_name,
           bio: row.author_bio,
+          avatarUrl: row.author_avatar_url,
           joinedAt: new Date(row.author_joined_at).getTime(),
         },
         imageUrl: row.image_url,
@@ -792,7 +799,8 @@ app.get(
     const result = await pool.query(
       `SELECT c.id, c.text, c.created_at,
               u.id AS author_id, u.username AS author_username, u.name AS author_name,
-              u.bio AS author_bio, u.joined_at AS author_joined_at
+              u.bio AS author_bio, u.avatar_url AS author_avatar_url,
+              u.joined_at AS author_joined_at
        FROM comments c
        JOIN users u ON u.id = c.author_id
        WHERE c.post_id = $1
@@ -807,6 +815,7 @@ app.get(
           username: row.author_username,
           name: row.author_name,
           bio: row.author_bio,
+          avatarUrl: row.author_avatar_url,
           joinedAt: new Date(row.author_joined_at).getTime(),
         },
         text: row.text,
@@ -968,6 +977,106 @@ app.get(
       isFollowing: row.is_following,
       isSelf: row.id === req.session.userId,
     });
+  }),
+);
+
+app.patch(
+  "/users/me",
+  requireAuth,
+  imageUpload.single("image"),
+  route(async (req, res) => {
+    const username = normalizeUsername(req.body?.username);
+    const name = requireString(req.body?.name, "Name", { max: 80 });
+    const bio = requireString(req.body?.bio, "Bio", { min: 0, max: 280 });
+    if (
+      req.body?.removeAvatar !== undefined &&
+      !["true", "false"].includes(req.body.removeAvatar)
+    ) {
+      throw httpError(400, "Remove-picture option must be true or false.");
+    }
+    const removeAvatar = req.body?.removeAvatar === "true";
+    if (removeAvatar && req.file) {
+      throw httpError(400, "Choose a new picture or remove the current picture, not both.");
+    }
+
+    const currentResult = await pool.query(
+      "SELECT avatar_url FROM users WHERE id = $1",
+      [req.session.userId],
+    );
+    const currentUser = currentResult.rows[0];
+    if (!currentUser) throw httpError(401, "Your session user no longer exists.");
+    const duplicate = await pool.query(
+      "SELECT 1 FROM users WHERE LOWER(username) = LOWER($1) AND id <> $2",
+      [username, req.session.userId],
+    );
+    if (duplicate.rows[0]) {
+      throw httpError(409, `The username "${username}" is already taken. Try another one.`);
+    }
+
+    let avatarUrl = currentUser.avatar_url;
+    let newImagePath = null;
+    if (req.file) {
+      const extension = imageExtension(req.file.buffer);
+      const expectedMimeType = {
+        ".jpg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+      }[extension];
+      if (req.file.mimetype !== expectedMimeType) {
+        throw httpError(400, "The image content does not match its file type.");
+      }
+      const filename = `${randomUUID()}${extension}`;
+      newImagePath = resolve(uploadDirectory, filename);
+      avatarUrl = `${publicApiUrl}/uploads/${filename}`;
+      await writeFile(newImagePath, req.file.buffer, { flag: "wx" });
+    } else if (removeAvatar) {
+      avatarUrl = null;
+    }
+
+    let result;
+    try {
+      result = await pool.query(
+        `UPDATE users
+         SET username = $1, name = $2, bio = $3, avatar_url = $4
+         WHERE id = $5
+         RETURNING ${userColumns}`,
+        [username, name, bio, avatarUrl, req.session.userId],
+      );
+    } catch (error) {
+      if (newImagePath) {
+        try {
+          await unlink(newImagePath);
+        } catch (cleanupError) {
+          if (cleanupError.code !== "ENOENT") {
+            console.error(
+              "Could not remove profile picture after a failed profile update.",
+              cleanupError,
+            );
+          }
+        }
+      }
+      if (error.code === "23505") {
+        throw httpError(409, `The username "${username}" is already taken. Try another one.`);
+      }
+      throw error;
+    }
+
+    if (avatarUrl !== currentUser.avatar_url) {
+      const oldImagePath = getLocalUploadPath(currentUser.avatar_url);
+      if (oldImagePath) {
+        try {
+          await unlink(oldImagePath);
+        } catch (error) {
+          if (error.code !== "ENOENT") {
+            console.error(
+              "Profile updated, but the old profile picture could not be removed.",
+              error,
+            );
+          }
+        }
+      }
+    }
+    res.json(toAppUser(result.rows[0]));
   }),
 );
 

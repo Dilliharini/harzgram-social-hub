@@ -7,6 +7,7 @@ import type {
   FollowResult,
   LikeResult,
   PostComment,
+  ProfileUpdateInput,
   SignUpInput,
   SignInInput,
   Story,
@@ -81,6 +82,7 @@ function seedDb(): MockDb {
       username: u.username,
       name: u.name,
       bio: u.bio,
+      avatarUrl: null,
       baseFollowerCount: u.baseFollowerCount,
       baseFollowingCount: u.baseFollowingCount,
       joinedAt: now - u.joinedDaysAgo * 86_400_000,
@@ -113,6 +115,7 @@ function loadDb(): MockDb {
     if (raw) {
       try {
         db = JSON.parse(raw) as MockDb;
+        for (const user of db.users) user.avatarUrl ??= null;
         db.notifications ??= [];
         return db;
       } catch {
@@ -157,12 +160,26 @@ function requireMe(): MockUser {
 }
 
 function toAppUser(user: MockUser): AppUser {
-  const { id, username, name, bio, joinedAt } = user;
-  return { id, username, name, bio, joinedAt };
+  const { id, username, name, bio, avatarUrl, joinedAt } = user;
+  return { id, username, name, bio, avatarUrl, joinedAt };
 }
 
 function fallbackAuthor(username: string): AppUser {
-  return { id: username, username, name: username, bio: "", joinedAt: 0 };
+  return { id: username, username, name: username, bio: "", avatarUrl: null, joinedAt: 0 };
+}
+
+function fileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result === "string") resolve(reader.result);
+      else reject(new Error("Couldn't read the selected profile picture."));
+    });
+    reader.addEventListener("error", () =>
+      reject(new Error("Couldn't read the selected profile picture.")),
+    );
+    reader.readAsDataURL(file);
+  });
 }
 
 function liveFollowerCount(user: MockUser): number {
@@ -251,6 +268,7 @@ export const mockApi = {
       username,
       name: input.name.trim() || username,
       bio: "New on HarzGram — saying hi! 👋",
+      avatarUrl: null,
       baseFollowerCount: 0,
       baseFollowingCount: 0,
       joinedAt: Date.now(),
@@ -465,6 +483,73 @@ export const mockApi = {
       isFollowing: database.follows.includes(`${me.username}:${target.username}`),
       isSelf: target.username.toLowerCase() === me.username.toLowerCase(),
     };
+  },
+
+  async updateProfile(input: ProfileUpdateInput): Promise<AppUser> {
+    await delay();
+    const me = requireMe();
+    const username = input.username.trim().toLowerCase();
+    const name = input.name.trim();
+    const bio = input.bio.trim();
+    if (!/^[a-z0-9._]{3,20}$/i.test(username)) {
+      throw new Error("Usernames are 3–20 characters: letters, numbers, dots or underscores.");
+    }
+    if (!name || name.length > 80) throw new Error("Name must be between 1 and 80 characters.");
+    if (bio.length > 280) throw new Error("Bio must be 280 characters or fewer.");
+    if (
+      loadDb().users.some(
+        (user) => user.id !== me.id && user.username.toLowerCase() === username.toLowerCase(),
+      )
+    ) {
+      throw new Error(`The username "${username}" is already taken. Try another one.`);
+    }
+    if (input.image) {
+      if (!["image/jpeg", "image/png", "image/webp"].includes(input.image.type)) {
+        throw new Error("Choose a JPEG, PNG, or WebP image.");
+      }
+      if (input.image.size > 10 * 1024 * 1024) {
+        throw new Error("Images must be 10 MB or smaller.");
+      }
+    }
+
+    const oldUsername = me.username;
+    const nextAvatarUrl = input.image
+      ? await fileAsDataUrl(input.image)
+      : input.removeAvatar
+        ? null
+        : me.avatarUrl;
+    me.username = username;
+    me.name = name;
+    me.bio = bio;
+    me.avatarUrl = nextAvatarUrl;
+
+    if (oldUsername.toLowerCase() !== username.toLowerCase()) {
+      const oldKey = oldUsername.toLowerCase();
+      const replaceReference = (value: string): string =>
+        value
+          .split(":")
+          .map((part) => (part.toLowerCase() === oldKey ? username : part))
+          .join(":");
+      for (const post of loadDb().posts) {
+        if (post.authorUsername.toLowerCase() === oldKey) post.authorUsername = username;
+      }
+      for (const comment of loadDb().comments) {
+        if (comment.authorUsername.toLowerCase() === oldKey) comment.authorUsername = username;
+      }
+      loadDb().likes = loadDb().likes.map(replaceReference);
+      loadDb().follows = loadDb().follows.map(replaceReference);
+      for (const notification of loadDb().notifications) {
+        if (notification.actorUsername.toLowerCase() === oldKey) {
+          notification.actorUsername = username;
+        }
+        if (notification.recipientUsername.toLowerCase() === oldKey) {
+          notification.recipientUsername = username;
+        }
+      }
+    }
+    setSessionUsername(username);
+    persist();
+    return toAppUser(me);
   },
 
   async getUserPosts(username: string): Promise<FeedPost[]> {

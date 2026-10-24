@@ -36,6 +36,15 @@ function MainLayout() {
   }, [navigate]);
 
   useEffect(() => {
+    function updateCurrentUser(event: Event) {
+      const updated = (event as CustomEvent<AppUser>).detail;
+      if (updated) setMe(updated);
+    }
+    window.addEventListener("harzgram:profile-updated", updateCurrentUser);
+    return () => window.removeEventListener("harzgram:profile-updated", updateCurrentUser);
+  }, []);
+
+  useEffect(() => {
     let mounted = true;
     function refreshUnreadCount() {
       api

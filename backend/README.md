@@ -46,7 +46,7 @@ npm install
 npm run db:setup
 ```
 
-`db:setup` applies the idempotent `schema.sql` and tracked SQL migrations. Run it again after backend updates to apply new migrations; it preserves existing users and posts. It includes additive post image URL, image-only post, Stories, and notifications migrations. These migrations add columns/tables and indexes without resetting existing data. The API creates its PostgreSQL session table on first start. Deleting a post cascades to its comments and likes through existing foreign keys; uploaded local image files are removed only after the database deletion commits.
+`db:setup` applies the idempotent `schema.sql` and tracked SQL migrations. Run it again after backend updates to apply new migrations; it preserves existing users and posts. It includes additive post image URL, image-only post, Stories, notifications, and user avatar URL migrations. These migrations add columns/tables and indexes without resetting existing data. The API creates its PostgreSQL session table on first start. Deleting a post cascades to its comments and likes through existing foreign keys; uploaded local image files are removed only after the database deletion commits.
 
 ## 3. Add optional demo data
 
@@ -177,6 +177,7 @@ All endpoints return JSON; errors have a `{ "message": "..." }` body. Except sig
 | `GET`    | `/posts/:id/comments`         | `PostComment[]`                                                                     |
 | `POST`   | `/posts/:id/comments`         | Body `{ "text": "..." }`; returns `PostComment`                                     |
 | `GET`    | `/users/:username`            | `UserProfile`                                                                       |
+| `PATCH`  | `/users/me`                   | Multipart `username`, `name`, `bio`, optional `image`, and optional `removeAvatar=true`; updates the signed-in user's profile |
 | `GET`    | `/users/:username/posts`      | `FeedPost[]`                                                                        |
 | `GET`    | `/users?q=<query>`            | Matching `UserSummary[]`                                                            |
 | `GET`    | `/users/suggested`            | Up to five `UserSummary` suggestions                                                |
