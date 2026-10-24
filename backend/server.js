@@ -61,6 +61,7 @@ function isAllowedFrontendOrigin(origin) {
 const pool = new pg.Pool({ connectionString: DATABASE_URL });
 const PgSessionStore = connectPgSimple(session);
 const app = express();
+if (isProduction) app.set("trust proxy", 1);
 const uploadDirectory = resolve(BACKEND_DIRECTORY, UPLOAD_DIR);
 const publicApiUrl = PUBLIC_API_URL.replace(/\/+$/, "");
 const publicApiOrigin = new URL(publicApiUrl);
@@ -81,8 +82,8 @@ await mkdir(uploadDirectory, { recursive: true });
 const cookieName = "harzgram.sid";
 const cookieOptions = {
   httpOnly: true,
-  secure: SESSION_COOKIE_SECURE === "true",
-  sameSite: "lax",
+  secure: isProduction || SESSION_COOKIE_SECURE === "true",
+  sameSite: isProduction ? "none" : "lax",
   path: "/",
 };
 

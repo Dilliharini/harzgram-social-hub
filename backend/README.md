@@ -101,6 +101,58 @@ The backend defaults CORS to `http://localhost:5173`. If Vite reports a differen
 
 Remove the root `.env` or set `VITE_USE_MOCK_API=true` to return to mock mode. Keep local environment files and real credentials out of version control.
 
+## Deploying to Render
+
+Deploy the frontend and API as separate **Web Services**, plus a Render PostgreSQL database. Do not commit environment files or credentials.
+
+### Frontend Web Service
+
+- Runtime: Node
+- Root Directory: repository root
+- Build Command: `npm ci && npm run build`
+- Start Command: `npm start`
+- Environment:
+  - `NODE_ENV=production`
+  - `HOST=0.0.0.0`
+  - `VITE_API_BASE_URL=https://<your-api-service>.onrender.com`
+  - `VITE_USE_MOCK_API=false`
+
+The build uses Nitro's `node-server` preset; the generated Node server reads Render's assigned `PORT`. `HOST=0.0.0.0` makes the service reachable by Render's router. `VITE_*` values are embedded at build time, so set them before each deployment/build.
+
+### Backend Web Service
+
+- Runtime: Node
+- Root Directory: `backend`
+- Build Command: `npm ci`
+- Start Command: `npm start`
+- Health Check Path: `/health`
+- Environment:
+  - `NODE_ENV=production`
+  - `DATABASE_URL` = Render PostgreSQL **Internal Database URL** (set as a secret environment variable)
+  - `SESSION_SECRET` = a newly generated random secret of at least 32 characters
+  - `FRONTEND_ORIGIN=https://<your-frontend-service>.onrender.com`
+  - `SESSION_COOKIE_SECURE=true`
+  - `PUBLIC_API_URL=https://<your-api-service>.onrender.com`
+  - `UPLOAD_DIR=/var/data/uploads` (when using a persistent disk)
+
+The API listens on Render's assigned `PORT` and binds to `0.0.0.0`. In production, the API requires `FRONTEND_ORIGIN` and only permits that configured origin for credentialed browser requests; localhost origins are permitted only in local development. If using a custom frontend domain, set its exact `https://` origin without a trailing path. Production session cookies are HTTP-only, `Secure`, `SameSite=None`, and scoped to `/` for cross-origin frontend/API requests; the API trusts Render's proxy so Express can issue secure cookies over HTTPS. `SESSION_COOKIE_SECURE=true` remains required in deployment configuration.
+
+### Database and additive migrations
+
+Create a Render PostgreSQL database in the same region as the API service, then set `DATABASE_URL` to its internal connection URL in the backend service environment. Apply schema changes from a local checkout or a one-off shell with the same `DATABASE_URL` environment value:
+
+```powershell
+Set-Location backend
+npm ci
+npm run db:setup
+```
+
+`db:setup` is safe to rerun; it applies pending additive migrations and does not reset or seed the database. Do not run `npm run seed` unless you intentionally want demo data.
+
+### Uploaded image persistence
+
+Post and Story images are currently stored on the API service's local filesystem, under `UPLOAD_DIR` (default `backend/uploads`). Render's ordinary service filesystem is ephemeral, so these uploads can be lost when an instance is replaced or redeployed. The current implementation can persist files by attaching a Render persistent disk to the **backend Web Service**, mounting it at `/var/data`, and setting `UPLOAD_DIR=/var/data/uploads`. The disk is service-specific and generally requires a paid Render instance; use one API instance for this local-filesystem design. Set `PUBLIC_API_URL` to the public API URL so persisted image URLs point to the API service. An external object-storage service is a better choice if you later need multiple API instances or independent media delivery.
+
 ## API contract
 
 All endpoints return JSON; errors have a `{ "message": "..." }` body. Except sign-up, sign-in, sign-out, current-user lookup, and health, routes require an authenticated session.
